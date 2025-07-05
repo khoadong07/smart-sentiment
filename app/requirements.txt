@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+transformers
+torch
+numpy
+requests
+redis
+python-socketio[client]
+python-socketio[asgi]
+aiohttp
+python-socketio[asyncio_client]
+sentencepiece
+python-dotenv
+pydantic_settings

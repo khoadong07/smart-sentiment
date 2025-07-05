@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: redis
+    container_name: redis
+  sentiment-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: socket-server
+    depends_on:
+      - redis
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./app:/app
+    command: python server.py
+
+  sentiment-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    volumes:
+      - ./app:/app
+    command: python worker.py

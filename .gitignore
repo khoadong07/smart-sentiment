@@ -1,0 +1,4 @@
+app/.env
+venv/
+model_cache/
+test.py
