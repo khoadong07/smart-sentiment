@@ -1,7 +1,7 @@
 import redis
 import json
 from transformers import AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
-
+from wordcloud import generate_word_cloud
 from settings import Settings
 from sentiment import sentiment_filtering
 
@@ -52,7 +52,7 @@ while True:
 
         try:
             prediction = predict_sentiment(data_input)
-
+            full_content = meta.get("title", "") + " " + meta.get("description", "") + " " + meta.get("content", "")
             result = {
                 "id": meta.get("id", ""),
                 "topic_name": meta.get("topic_name", ""),
@@ -63,6 +63,7 @@ while True:
                 "site_name": meta.get("siteName", ""),
                 "site_id": meta.get("siteId", ""),
                 "type": meta.get("type", ""),
+                "word_cloud": generate_word_cloud(full_content),
                 **prediction
             }
 

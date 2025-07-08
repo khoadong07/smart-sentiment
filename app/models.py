@@ -13,3 +13,7 @@ class SentimentInput(BaseModel):
     description: Optional[str] = None
     is_kol: Optional[bool] = False
     total_interactions: Optional[int] = None
+
+class WordCloudResponse(BaseModel):
+    word: str
+    frequency: int

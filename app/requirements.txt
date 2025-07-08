@@ -12,3 +12,4 @@ python-socketio[asyncio_client]
 sentencepiece
 python-dotenv
 pydantic_settings
+pyvi
