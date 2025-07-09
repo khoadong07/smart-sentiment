@@ -1,7 +1,11 @@
-from typing import List
-from models import WordCloudResponse
 import re
 from pyvi import ViTokenizer
+from typing import List
+from collections import Counter
+
+from models import WordCloudResponse
+
+# Giả định: bạn đã định nghĩa sẵn class này
 
 def generate_word_cloud(content: str) -> List[WordCloudResponse]:
     tokenized_content = ViTokenizer.tokenize(content)
@@ -26,4 +30,5 @@ def generate_word_cloud(content: str) -> List[WordCloudResponse]:
             seen.add(item.word)
 
     ordered_word_cloud.sort(key=lambda x: x.frequency, reverse=True)
+
     return ordered_word_cloud
