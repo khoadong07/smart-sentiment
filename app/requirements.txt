@@ -13,3 +13,4 @@ sentencepiece
 python-dotenv
 pydantic_settings
 pyvi
+aioredis

@@ -1,7 +1,12 @@
+version: '3.8'
+
 services:
   redis:
-    image: redis
+    image: redis:latest
     container_name: redis
+    ports:
+      - "6379"
+
   sentiment-server:
     build:
       context: .
@@ -13,6 +18,7 @@ services:
       - "5001:5001"
     volumes:
       - ./app:/app
+      - ./app/models:/app/models
     command: python server.py
 
   sentiment-worker:
@@ -23,4 +29,7 @@ services:
       - redis
     volumes:
       - ./app:/app
+      - ./app/models:/app/models
     command: python worker.py
+    deploy:
+      replicas: 4  # Chạy 4 worker instances
