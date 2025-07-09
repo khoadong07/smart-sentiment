@@ -96,7 +96,10 @@ def worker_process():
             }))
 
 if __name__ == "__main__":
-    num_processes = multiprocessing.cpu_count()
+    num_processes = multiprocessing.cpu_count()*0.8
+    # convert num_processes to int
+    num_processes = int(num_processes)
+
     print(f"Starting {num_processes} worker processes...")
     processes = []
     for _ in range(num_processes):
