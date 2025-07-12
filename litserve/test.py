@@ -1,16 +1,16 @@
 import socketio
-import time
 import threading
+import time
+from collections import defaultdict
 
 # Config
-NUM_REQUESTS = 100
-CONCURRENCY = 10
 SERVER_URL = 'http://127.0.0.1:5001'
+DURATION = 60  # chạy trong 60 giây
 
-# Shared counters
+# Thống kê
 success_count = 0
-fail_count = 0
 lock = threading.Lock()
+per_second_counter = defaultdict(int)
 
 sample_data = {
     "data": [{
@@ -28,14 +28,16 @@ sample_data = {
     }]
 }
 
-def test_socket_request():
+def send_and_track():
+    global success_count
     sio = socketio.Client()
 
     def on_result(data):
         nonlocal sio
-        global success_count
+        ts = int(time.time())
         with lock:
             success_count += 1
+            per_second_counter[ts] += 1
         sio.disconnect()
 
     try:
@@ -44,35 +46,29 @@ def test_socket_request():
         sio.emit('predict', sample_data)
         sio.wait()
     except Exception as e:
-        global fail_count
-        with lock:
-            fail_count += 1
         print(f"🚨 Error: {e}")
 
-def run_benchmark():
-    global success_count, fail_count
-    threads = []
+def run_test():
+    print(f"🚀 Start stress test for {DURATION} seconds...\n")
     start_time = time.time()
+    end_time = start_time + DURATION
 
-    for i in range(NUM_REQUESTS):
-        t = threading.Thread(target=test_socket_request)
-        threads.append(t)
-        t.start()
+    def spam_requests():
+        while time.time() < end_time:
+            threading.Thread(target=send_and_track).start()
 
-        # Giới hạn số luồng song song
-        while threading.active_count() > CONCURRENCY:
-            time.sleep(0.01)
+    spam_thread = threading.Thread(target=spam_requests)
+    spam_thread.start()
+    spam_thread.join()
 
-    for t in threads:
-        t.join()
+    # Đợi thêm vài giây cho các request xử lý xong
+    time.sleep(5)
 
-    end_time = time.time()
-    duration = end_time - start_time
-
-    print(f"\n⏱️ Total time: {duration:.2f} seconds")
-    print(f"✅ Success: {success_count}")
-    print(f"❌ Failed:  {fail_count}")
-    print(f"📈 Throughput: {success_count / duration:.2f} req/s")
+    # Tổng kết
+    print(f"\n✅ Total successful requests in {DURATION}s: {success_count}")
+    print("📊 Requests per second:")
+    for sec in sorted(per_second_counter):
+        print(f"  🕒 {time.strftime('%H:%M:%S', time.localtime(sec))}: {per_second_counter[sec]}")
 
 if __name__ == '__main__':
-    run_benchmark()
+    run_test()
