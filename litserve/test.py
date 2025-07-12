@@ -1,13 +1,12 @@
 import socketio
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import defaultdict
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 
 SERVER_URL = 'http://127.0.0.1:5001'
-MAX_REQUESTS = 600
-MAX_CONCURRENCY = 100  # ✨ giới hạn tối đa socket mở đồng thời
-RPS_LIMIT = MAX_REQUESTS // 60
+MAX_CONCURRENCY = 500  # giới hạn socket mở đồng thời
+TEST_DURATION = 60  # giây
 
 # Thống kê
 success_count = 0
@@ -37,9 +36,10 @@ def send_request():
 
     def on_result(data):
         nonlocal sio
+        ts = int(time.time())
         with lock:
             success_count += 1
-            per_second_counter[int(time.time())] += 1
+            per_second_counter[ts] += 1
         sio.disconnect()
 
     try:
@@ -50,29 +50,28 @@ def send_request():
     except Exception as e:
         with lock:
             fail_count += 1
-        print(f"🚨 Error: {e}")
         try:
             sio.disconnect()
         except:
             pass
 
-def run_test():
-    print(f"🚀 Sending {MAX_REQUESTS} requests with max {MAX_CONCURRENCY} concurrent sockets\n")
+def run_test_60s():
+    print(f"🚀 Running test for {TEST_DURATION} seconds with max {MAX_CONCURRENCY} concurrent sockets...\n")
     start_time = time.time()
+    end_time = start_time + TEST_DURATION
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as executor:
-        futures = [executor.submit(send_request) for _ in range(MAX_REQUESTS)]
-        for future in as_completed(futures):
-            pass  # có thể xử lý result nếu cần
+        while time.time() < end_time:
+            executor.submit(send_request)
 
-    duration = time.time() - start_time
-    print(f"\n✅ Success: {success_count}")
-    print(f"❌ Failed:  {fail_count}")
-    print(f"⏱️ Duration: {duration:.2f}s")
-    print(f"📈 Avg throughput: {success_count / duration:.2f} req/s")
+    # Chờ thêm 5s cho các request xử lý xong
+    time.sleep(5)
+
+    print(f"\n✅ Total success in {TEST_DURATION} seconds: {success_count}")
+    print(f"❌ Total failed: {fail_count}")
     print("📊 Requests per second:")
     for sec in sorted(per_second_counter):
         print(f"  🕒 {time.strftime('%H:%M:%S', time.localtime(sec))}: {per_second_counter[sec]}")
 
 if __name__ == '__main__':
-    run_test()
+    run_test_60s()
