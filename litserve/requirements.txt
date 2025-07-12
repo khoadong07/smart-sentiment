@@ -1,0 +1,9 @@
+aiohttp==3.9.5
+python-socketio[asyncio]>=5.11.1
+requests>=2.31.0
+pyvi>=0.1.1
+transformers
+torch
+pydantic>=1.10.13,<2.0.0
+litserve
+asyncio
