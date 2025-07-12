@@ -1,19 +1,19 @@
 import socketio
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
+import threading
 
-# Cấu hình
 SERVER_URL = 'http://127.0.0.1:5001'
 MAX_REQUESTS = 600
-DURATION = 60  # giây
-RPS_LIMIT = MAX_REQUESTS // DURATION  # ~10 req/s
+MAX_CONCURRENCY = 100  # ✨ giới hạn tối đa socket mở đồng thời
+RPS_LIMIT = MAX_REQUESTS // 60
 
 # Thống kê
 success_count = 0
 fail_count = 0
-lock = threading.Lock()
 per_second_counter = defaultdict(int)
+lock = threading.Lock()
 
 sample_data = {
     "data": [{
@@ -37,10 +37,9 @@ def send_request():
 
     def on_result(data):
         nonlocal sio
-        ts = int(time.time())
         with lock:
             success_count += 1
-            per_second_counter[ts] += 1
+            per_second_counter[int(time.time())] += 1
         sio.disconnect()
 
     try:
@@ -52,25 +51,28 @@ def send_request():
         with lock:
             fail_count += 1
         print(f"🚨 Error: {e}")
+        try:
+            sio.disconnect()
+        except:
+            pass
 
-def run_limited_requests():
-    print(f"🚀 Sending max {MAX_REQUESTS} requests in {DURATION} seconds (~{RPS_LIMIT}/s)...\n")
+def run_test():
+    print(f"🚀 Sending {MAX_REQUESTS} requests with max {MAX_CONCURRENCY} concurrent sockets\n")
     start_time = time.time()
 
-    for i in range(MAX_REQUESTS):
-        threading.Thread(target=send_request).start()
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as executor:
+        futures = [executor.submit(send_request) for _ in range(MAX_REQUESTS)]
+        for future in as_completed(futures):
+            pass  # có thể xử lý result nếu cần
 
-        # Giới hạn tốc độ gửi ~10 req/s
-        time.sleep(1.0 / RPS_LIMIT)
-
-    # Đợi thêm 5s để các request xử lý xong
-    time.sleep(5)
-
-    print(f"\n✅ Total success: {success_count}")
-    print(f"❌ Total failed: {fail_count}")
+    duration = time.time() - start_time
+    print(f"\n✅ Success: {success_count}")
+    print(f"❌ Failed:  {fail_count}")
+    print(f"⏱️ Duration: {duration:.2f}s")
+    print(f"📈 Avg throughput: {success_count / duration:.2f} req/s")
     print("📊 Requests per second:")
     for sec in sorted(per_second_counter):
         print(f"  🕒 {time.strftime('%H:%M:%S', time.localtime(sec))}: {per_second_counter[sec]}")
 
 if __name__ == '__main__':
-    run_limited_requests()
+    run_test()
