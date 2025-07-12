@@ -57,8 +57,6 @@ class BERTLitAPI(LitAPI):
         return results if len(results) > 1 else results[0]
 
 if __name__ == "__main__":
-    import multiprocessing as mp
-    mp.set_start_method("spawn", force=True)
     api = BERTLitAPI()
     server = LitServer(api, accelerator='cpu', devices=0)
     server.run(port=8000, num_api_servers=8)
