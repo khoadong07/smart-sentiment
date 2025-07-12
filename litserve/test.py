@@ -3,12 +3,15 @@ import threading
 import time
 from collections import defaultdict
 
-# Config
+# Cấu hình
 SERVER_URL = 'http://127.0.0.1:5001'
-DURATION = 60  # chạy trong 60 giây
+MAX_REQUESTS = 600
+DURATION = 60  # giây
+RPS_LIMIT = MAX_REQUESTS // DURATION  # ~10 req/s
 
 # Thống kê
 success_count = 0
+fail_count = 0
 lock = threading.Lock()
 per_second_counter = defaultdict(int)
 
@@ -28,8 +31,8 @@ sample_data = {
     }]
 }
 
-def send_and_track():
-    global success_count
+def send_request():
+    global success_count, fail_count
     sio = socketio.Client()
 
     def on_result(data):
@@ -46,29 +49,28 @@ def send_and_track():
         sio.emit('predict', sample_data)
         sio.wait()
     except Exception as e:
+        with lock:
+            fail_count += 1
         print(f"🚨 Error: {e}")
 
-def run_test():
-    print(f"🚀 Start stress test for {DURATION} seconds...\n")
+def run_limited_requests():
+    print(f"🚀 Sending max {MAX_REQUESTS} requests in {DURATION} seconds (~{RPS_LIMIT}/s)...\n")
     start_time = time.time()
-    end_time = start_time + DURATION
 
-    def spam_requests():
-        while time.time() < end_time:
-            threading.Thread(target=send_and_track).start()
+    for i in range(MAX_REQUESTS):
+        threading.Thread(target=send_request).start()
 
-    spam_thread = threading.Thread(target=spam_requests)
-    spam_thread.start()
-    spam_thread.join()
+        # Giới hạn tốc độ gửi ~10 req/s
+        time.sleep(1.0 / RPS_LIMIT)
 
-    # Đợi thêm vài giây cho các request xử lý xong
+    # Đợi thêm 5s để các request xử lý xong
     time.sleep(5)
 
-    # Tổng kết
-    print(f"\n✅ Total successful requests in {DURATION}s: {success_count}")
+    print(f"\n✅ Total success: {success_count}")
+    print(f"❌ Total failed: {fail_count}")
     print("📊 Requests per second:")
     for sec in sorted(per_second_counter):
         print(f"  🕒 {time.strftime('%H:%M:%S', time.localtime(sec))}: {per_second_counter[sec]}")
 
 if __name__ == '__main__':
-    run_test()
+    run_limited_requests()
