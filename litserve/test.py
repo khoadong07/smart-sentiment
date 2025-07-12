@@ -1,14 +1,13 @@
 import socketio
 import time
 import threading
-import json
 
-# Cấu hình
+# Config
 NUM_REQUESTS = 100
 CONCURRENCY = 10
 SERVER_URL = 'http://127.0.0.1:5001'
 
-# Biến thống kê
+# Shared counters
 success_count = 0
 fail_count = 0
 lock = threading.Lock()
@@ -30,22 +29,22 @@ sample_data = {
 }
 
 def test_socket_request():
-    global success_count, fail_count
-
     sio = socketio.Client()
 
-    try:
-        @sio.on('result')
-        def on_result(data):
-            nonlocal sio
-            with lock:
-                success_count += 1
-            sio.disconnect()
+    def on_result(data):
+        nonlocal sio
+        global success_count
+        with lock:
+            success_count += 1
+        sio.disconnect()
 
+    try:
+        sio.on('result', on_result)
         sio.connect(SERVER_URL)
         sio.emit('predict', sample_data)
         sio.wait()
     except Exception as e:
+        global fail_count
         with lock:
             fail_count += 1
         print(f"🚨 Error: {e}")
@@ -60,7 +59,7 @@ def run_benchmark():
         threads.append(t)
         t.start()
 
-        # Chặn gửi quá nhanh nếu vượt concurrency
+        # Giới hạn số luồng song song
         while threading.active_count() > CONCURRENCY:
             time.sleep(0.01)
 
