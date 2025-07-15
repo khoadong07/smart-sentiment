@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  fastapi:
+    container_name: negative_buzz_analyzer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1

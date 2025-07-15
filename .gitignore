@@ -2,3 +2,6 @@ app/.env
 venv/
 model_cache/
 node_modules/
+negative_buzz_analyzer/.env
+negative_buzz_analyzer/venv
+negative_buzz_analyzer/.pytest_cache
