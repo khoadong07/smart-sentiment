@@ -34,7 +34,7 @@ def on_result(data):
 
 if __name__ == '__main__':
     try:
-        sio.connect('http://127.0.0.1:5001')
+        sio.connect('http://148.113.213.217:5001')
         sio.wait()
     except Exception as e:
         print(f"🚨 Connection error: {e}")
