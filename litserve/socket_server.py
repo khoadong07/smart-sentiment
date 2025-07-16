@@ -1,50 +1,49 @@
 import socketio
+from fastapi import FastAPI
 import requests
 import re
 from pyvi import ViTokenizer
-from typing import List
 from pydantic import BaseModel
-from aiohttp import web
+from typing import List
 
-# -------------------------------
-# Config
-# -------------------------------
-PREDICT_API_URL = "http://0.0.0.0:8989/predict"
+# -------------------------
+# Khai báo SIO + FastAPI app
+# -------------------------
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+fastapi_app = FastAPI()
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
-# -------------------------------
-# Pydantic Response Schema
-# -------------------------------
+# -------------------------
+# Word cloud xử lý
+# -------------------------
 class WordCloudResponse(BaseModel):
     word: str
     frequency: int
 
-# -------------------------------
-# Word Cloud Generator
-# -------------------------------
 def generate_word_cloud(content: str) -> List[dict]:
     tokenized_content = ViTokenizer.tokenize(content)
     words = re.findall(r'\w+', tokenized_content.lower())
     meaningful_words = [word for word in words if '_' in word]
 
-    word_freq = {}
+    freq = {}
     for word in meaningful_words:
-        word_freq[word] = word_freq.get(word, 0) + 1
+        freq[word] = freq.get(word, 0) + 1
 
     seen = set()
     word_cloud = []
     for word in meaningful_words:
         if word not in seen:
             seen.add(word)
-            word_cloud.append(WordCloudResponse(word=word, frequency=word_freq[word]))
+            word_cloud.append(WordCloudResponse(word=word, frequency=freq[word]))
 
-    # Sort by frequency
     word_cloud.sort(key=lambda x: x.frequency, reverse=True)
-
     return [item.dict() for item in word_cloud]
 
-# -------------------------------
-# Call inference API
-# -------------------------------
+# -------------------------
+# Gọi API sentiment
+# -------------------------
+PREDICT_API_URL = "http://0.0.0.0:8989/predict"
+
 def call_inference(text: str) -> str:
     try:
         response = requests.post(PREDICT_API_URL, json={"text": text}, timeout=5)
@@ -55,16 +54,9 @@ def call_inference(text: str) -> str:
         print(f"❌ Error calling inference: {e}")
         return "neutral"
 
-# -------------------------------
-# Socket.IO Setup with aiohttp
-# -------------------------------
-sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
-app = web.Application()
-sio.attach(app)
-
-# -------------------------------
-# Events
-# -------------------------------
+# -------------------------
+# Socket.IO events
+# -------------------------
 @sio.event
 async def connect(sid, environ):
     print(f"✅ Client connected: {sid}")
@@ -79,10 +71,7 @@ async def predict(sid, data):
     results = []
 
     for item in data.get("data", []):
-        # Concatenate input text
         text = f"{item.get('title', '')} {item.get('description', '')} {item.get('content', '')}"
-        print(f"📝 Input text: {text[:100]}...")
-
         sentiment = call_inference(text)
         word_cloud = generate_word_cloud(text)
 
@@ -111,9 +100,3 @@ async def predict(sid, data):
         results.append(result)
 
     await sio.emit('result', {'results': results}, to=sid)
-
-# -------------------------------
-# Run server
-# -------------------------------
-if __name__ == '__main__':
-    web.run_app(app, host='0.0.0.0', port=5001)
