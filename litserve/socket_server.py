@@ -43,7 +43,7 @@ from aiohttp import web
 app = web.Application()
 sio.attach(app)
 
-PREDICT_API_URL = "http://0.0.0.0:9000/predict"
+PREDICT_API_URL = "http://0.0.0.0:8989/predict"
 
 # Function to call inference API
 def call_inference(text: str):
