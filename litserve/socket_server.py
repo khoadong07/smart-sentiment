@@ -1,88 +1,116 @@
-import socketio
-import requests
 import re
+import uvicorn
+import socketio
+import asyncio
+import aiohttp
+from fastapi import FastAPI
 from pyvi import ViTokenizer
-from typing import List
+from typing import List, Dict, Any
 from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt, wait_fixed, RetryError, retry_if_exception_type
 
+# ────────⚙️ Config ────────
+INFER_URL = "http://0.0.0.0:8989/predict"
+
+# ────────🔌 Socket.IO + FastAPI ────────
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+app = FastAPI()
+asgi_app = socketio.ASGIApp(sio, app)
+
+# ────────🌐 AIOHTTP Session ────────
+aiohttp_session: aiohttp.ClientSession = None
+
+
+# ────────📦 Models ────────
 class WordCloudResponse(BaseModel):
     word: str
     frequency: int
 
-def generate_word_cloud(content: str) -> List[dict]:
-    tokenized_content = ViTokenizer.tokenize(content)
-    words = re.findall(r'\w+', tokenized_content.lower())
-    meaningful_words = [word for word in words if '_' in word]
 
-    word_cloud_dict = {}
+# ────────🧠 NLP Utils ────────
+def generate_word_cloud(content: str) -> List[Dict[str, Any]]:
+    """
+    Tạo word cloud từ nội dung tiếng Việt.
+    Chỉ lấy các từ ghép có gạch dưới sau khi tokenize.
+    """
+    tokenized = ViTokenizer.tokenize(content)
+    words = re.findall(r'\w+', tokenized.lower())
+    meaningful_words = [w for w in words if '_' in w]
+
+    freq_map = {}
     for word in meaningful_words:
-        if word not in word_cloud_dict:
-            word_cloud_dict[word] = 1
-        else:
-            word_cloud_dict[word] += 1
+        freq_map[word] = freq_map.get(word, 0) + 1
 
-    word_cloud = [WordCloudResponse(word=word, frequency=word_cloud_dict[word]) for word in meaningful_words if
-                  word in word_cloud_dict]
-
+    # Tránh trùng từ
     seen = set()
-    ordered_word_cloud = []
-    for item in word_cloud:
-        if item.word not in seen:
-            ordered_word_cloud.append(item)
-            seen.add(item.word)
+    word_cloud = []
+    for word in meaningful_words:
+        if word not in seen:
+            seen.add(word)
+            word_cloud.append(WordCloudResponse(word=word, frequency=freq_map[word]))
 
-    ordered_word_cloud.sort(key=lambda x: x.frequency, reverse=True)
+    # Sắp xếp theo tần suất
+    word_cloud.sort(key=lambda x: x.frequency, reverse=True)
 
-    # 🔁 Trả về danh sách dict để tránh lỗi serialize
-    return [item.dict() for item in ordered_word_cloud]
+    return [item.dict() for item in word_cloud]
 
 
-# Create Socket.IO async server
-sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
-from aiohttp import web
-app = web.Application()
-sio.attach(app)
-
-PREDICT_API_URL = "http://0.0.0.0:9000/predict"
-
-# Function to call inference API
-def call_inference(text: str):
+# ────────📤 Inference Call ────────
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+    retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError))
+)
+async def call_inference(text: str) -> str:
+    """
+    Gọi API phân tích cảm xúc (sentiment) từ model server.
+    """
     try:
-        response = requests.post(
-            PREDICT_API_URL,
-            json={"text": text},
-            timeout=5
-        )
-        if response.status_code == 200:
-            result = response.json()
-            return result.get("predicted_label", "neutral").lower()
-        else:
-            return "neutral"
+        async with aiohttp_session.post(INFER_URL, json={"text": text}, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get("predicted_label", "neutral").lower()
     except Exception as e:
-        print(f"Error calling inference: {e}")
-        return "neutral"
+        print(f"[❗] Inference error: {e}")
 
+    return "neutral"
+
+
+# ────────🚀 FastAPI Events ────────
+@app.on_event("startup")
+async def startup_event():
+    global aiohttp_session
+    aiohttp_session = aiohttp.ClientSession()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await aiohttp_session.close()
+
+
+# ────────⚡ Socket.IO Events ────────
 @sio.event
 async def connect(sid, environ):
-    print("Client connected:", sid)
+    print(f"🔌 Client connected: {sid}")
+
 
 @sio.event
 async def disconnect(sid):
-    print("Client disconnected:", sid)
+    print(f"❌ Client disconnected: {sid}")
 
-@sio.event
-async def predict(sid, data):
-    print("Received predict event")
+
+@sio.on("predict")
+async def handle_predict(sid, data):
+    print("📥 Received 'predict' event")
+    items = data.get("data", [])
     results = []
 
-    for item in data.get("data", []):
+    async def process_item(item):
         text = f"{item.get('title', '')} {item.get('description', '')} {item.get('content', '')}"
-        print(text)
+        sentiment = await call_inference(text)
+        word_cloud = generate_word_cloud(text)
 
-        sentiment = call_inference(text)
-        words_cloud = generate_word_cloud(text)
-        print(words_cloud)
-        result = {
+        return {
             "id": item.get("id", ""),
             "topic_name": item.get("topic_name", ""),
             "topic_id": item.get("topic_id", ""),
@@ -101,13 +129,16 @@ async def predict(sid, data):
             "crisis_keywords": [],
             "is_kol": item.get("is_kol", False),
             "total_interactions": item.get("total_interactions", 0),
-            "word_cloud": words_cloud
+            "word_cloud": word_cloud
         }
 
-        results.append(result)
+    # Parallelize with asyncio
+    tasks = [process_item(item) for item in items]
+    results = await asyncio.gather(*tasks)
 
-    await sio.emit('result', {'results': results}, to=sid)
+    await sio.emit("result", {"results": results}, to=sid)
 
-# Run aiohttp app
+
+# ────────▶️ Main ────────
 if __name__ == '__main__':
-    web.run_app(app, host='0.0.0.0', port=5001)
+    uvicorn.run(asgi_app, host="0.0.0.0", port=5001, workers=1)

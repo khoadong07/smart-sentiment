@@ -1,3 +1,4 @@
+source venv/bin/activate
 
 # Start the server in background
 nohup python server.py > logs/inference_server.log 2>&1 &
